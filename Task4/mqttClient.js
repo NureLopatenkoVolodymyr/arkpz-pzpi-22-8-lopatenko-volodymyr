@@ -1,8 +1,8 @@
 const mqtt = require('mqtt');
-const pool = require('./db'); // Подключение к базе данных
+const pool = require('./db'); // Підключення до бази даних
 
-const mqttBroker = 'mqtt://broker.hivemq.com'; // Замените на URL вашего MQTT-брокера
-const topic = 'iot/sensor'; // Топик, на который будет подписан клиент
+const mqttBroker = 'mqtt://broker.hivemq.com'; // Замініть на URL вашого MQTT-брокера
+const topic = 'iot/sensor'; // Топік, на який буде підписаний клієнт
 
 const mqttClient = mqtt.connect(mqttBroker);
 
@@ -22,16 +22,16 @@ mqttClient.on('message', async (topic, message) => {
     const payload = JSON.parse(message.toString());
     const { doorId, accessCode, distance } = payload;
 
-    // Проверяем, что данные относятся к двери с ID 1
+    // Перевіряємо, чи дані відносяться до дверей з ID 1
     if (doorId === 1) {
-      // Проверка кода доступа
+      // Перевірка коду доступу
       const accessCodeQuery = `
         SELECT * FROM AccessCodes 
         WHERE DoorID = $1 AND AccessCode = $2 AND IsActive = TRUE`;
       const accessCodeResult = await pool.query(accessCodeQuery, [doorId, accessCode]);
 
       if (accessCodeResult.rows.length > 0) {
-        // Если код верный и расстояние >= 2 см, увеличиваем OpenCount
+        // Якщо код вірний і відстань >= 2 см, збільшуємо OpenCount
         if (distance >= 2) {
           const updateQuery = `
             UPDATE Doors 
@@ -46,7 +46,7 @@ mqttClient.on('message', async (topic, message) => {
         console.log('Невірний код доступу.');
       }
 
-      // Логирование попытки доступа
+      // Логування спроби доступу
       const logQuery = `
         INSERT INTO AccessLogs (DoorID, AccessCode, AccessTime) 
         VALUES ($1, $2, NOW())`;
