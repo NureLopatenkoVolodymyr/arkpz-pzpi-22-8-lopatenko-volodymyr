@@ -1,0 +1,198 @@
+МІНІСТЕРСТВО ОСВІТИ І НАУКИ УКРАЇНИ
+ХАРКІВСЬКИЙ НАЦІОНАЛЬНИЙ УНІВЕРСИТЕТ РАДІОЕЛЕКТРОНІКИ
+
+Кафедра «Програмної інженерії»
+
+
+
+ЗВІТ
+З Лабораторної роботи № 3
+з дисципліни
+«Аналіз та рефакторинг коду»
+
+
+Виконав: 
+ст. гр. ПЗПІ-22-8
+Лопатенко В.В.
+
+Перевірив: 
+ст. викладач кат. ПІ 
+Сокорчук І.П.
+
+
+
+Харків 2024
+
+
+
+
+Мета роботи: необхідно розробити бізнес-логику та функції адміністрування серверної частини  програмної системи.
+Хід роботи: 
+Під час виконання лабораторної роботи була створена серверна частина програмної система для контролю доступу на підприємствах. Розроблена система дозволяє ефективно контролювати двері, користувачів та коди доступу, надаючи адміністраторам широкі можливості з адміністрування різних зон. Система підтримує розподіл ролей, де адміністраторам надається повний функціонал для додавання, видалення та редагування об'єктів системи.
+Для захисту даних та обмеження доступу до адміністративних функцій було реалізовано механізми автентифікації та авторизації, що базуються на JWT токенах. Додатковий рівень безпеки забезпечується middleware, який перевіряє права доступу та дозволяє виконувати дії лише користувачам з відповідними привілеями.
+Зв’язок із базою даних PostgreSQL реалізовано через ефективні SQL-запити, що дозволяє швидко та надійно отримувати необхідні дані. Функціонал системи охоплює роботу з таблицями дверей, користувачів, кодів доступу та журналу подій. Усі функції пройшли комплексне тестування на предмет працездатності, стійкості та відповідності вимогам безпеки.
+
+1.	Текстовий опис інженерних рішень
+Серверна логіка проєкту реалізована за допомогою Node.js із застосуванням фреймворку Express.js і бази даних PostgreSQL. Основна мета серверної частини — обробка запитів клієнтів, виконання бізнес-логіки та взаємодія з базою даних.
+Ключовими можливостями є керування користувачами та дверима. Запити до сервера дозволяють виконувати такі дії, як створення нового користувача, перевірка облікових даних, додавання та видалення дверей, а також перегляд записів. Усі ці запити обробляються функціями, які формують SQL-запити до відповідних таблиць у базі даних, включно з таблицями користувачів і дверей.
+Для захисту системи впроваджено механізм автентифікації за допомогою JWT токенів, що дозволяє ідентифікувати користувачів та обмежувати доступ до чутливих операцій. Окремий middleware відповідає за перевірку прав доступу до адміністративних функцій, таких як редагування доступів або керування дверима.
+Інформація про всіх користувачів, двері та доступи зберігається в базі PostgreSQL. Для зручності тестування API створена документація за допомогою Swagger, що дозволяє швидко ознайомитися з усіма можливими ендпоінтами.
+Окрім основної логіки, система інтегрована з IoT-датчиком, який фіксує кількість відкривань дверей і спроб введення кодів. Дані про кожну подію зберігаються в базі даних та можуть бути використані для аналізу активності, що допомагає виявляти потенційні загрози, такі як часті невдалі спроби доступу, та забезпечує підвищений рівень безпеки.
+
+2.	Фрагменти програмного коду
+Бізнес логіки (математичних методів обробки даних) серверної частини; 
+Функція для додавання двері:
+1  async function addDoor(doorName, location) {
+2    const query = 'INSERT INTO Doors (DoorName, Location) VALUES ($1, $2) RETURNING DoorID, DoorName, Location';
+3    const values = [doorName, location];
+4  
+5    try {
+6      const result = await client.query(query, values);
+7      return result.rows[0];
+8    } catch (err) {
+9      throw new Error('Помилка при додаванні дверей: ' + err.message);
+10   }
+11 }
+
+Фунція для видалення двері:
+12  async function deleteDoor(doorId) {
+13   const query = 'DELETE FROM Doors WHERE DoorID = $1 RETURNING DoorID, DoorName, Location';
+14   const values = [doorId];
+15 
+16   try {
+17     const result = await client.query(query, values);
+18     if (result.rows.length === 0) {
+19       throw new Error('Двері з таким ID не знайдено');
+20     }
+21     return result.rows[0]; // Повертаємо видалену дверь
+22   } catch (err) {
+23     throw new Error('Помилка при видаленні дверей: ' + err.message);
+24   }
+25 }
+
+Функція для додавання коду доступу:
+26  async function addAccessCode(doorId, accessCode) {
+27   // Перевірка, чи вже існує активний код для цієї дверей
+28   const checkQuery = `
+29     SELECT CodeID FROM AccessCodes
+30     WHERE DoorID = $1 AND IsActive = TRUE
+31   `;
+32   const checkValues = [doorId];
+33 
+34   try {
+35     // Перевіряємо, чи існує активний код
+36     const checkResult = await client.query(checkQuery, checkValues);
+37     if (checkResult.rows.length > 0) {
+38       throw new Error('Для цієї дверей вже існує активний код доступу. Спочатку деактивуйте його або замініть.');
+39     }
+40     // Якщо активного коду немає, додаємо новий
+41     const insertQuery = `
+42       INSERT INTO AccessCodes (DoorID, AccessCode, IsActive)
+43       VALUES ($1, $2, TRUE)
+44       RETURNING CodeID, DoorID, AccessCode, IsActive
+45     `;
+46     const insertValues = [doorId, accessCode];
+47     const result = await client.query(insertQuery, insertValues);
+48     return result.rows[0];
+49   } catch (err) {
+50     throw new Error('Помилка при додаванні коду доступу: ' + err.message);
+51   }
+52 }
+
+Функція для зміни коду доступу:
+53  async function replaceAccessCode(doorId, newAccessCode) {
+54   // Деактивуємо попередній активний код
+55   const deactivateQuery = `
+56     UPDATE AccessCodes
+57     SET IsActive = FALSE
+58     WHERE DoorID = $1 AND IsActive = TRUE
+59   `;
+60   const deactivateValues = [doorId];
+61   // Додаємо новий активний код
+62   const addQuery = `
+63     INSERT INTO AccessCodes (DoorID, AccessCode, IsActive)
+64     VALUES ($1, $2, TRUE)
+65     RETURNING CodeID, DoorID, AccessCode, IsActive
+66   `;
+67   const addValues = [doorId, newAccessCode];
+68 
+69   try {
+70     // Деактивуємо попередній код
+71     await client.query(deactivateQuery, deactivateValues);
+72     // Додаємо новий код
+73     const result = await client.query(addQuery, addValues);
+74     return result.rows[0];
+75   } catch (err) {
+76     throw new Error('Помилка при заміні коду доступу: ' + err.message);
+77   }
+78 }
+
+Адміністрування серверної частини.
+Функція для отримання всіх користувачів:
+1  async function getAllUsers() {
+2    const query = 'SELECT UserID, Username, Role FROM Users';
+3    try {
+4      const result = await client.query(query);
+5      return result.rows;
+6    } catch (err) {
+7      throw new Error('Помилка при отриманні списку користувачів: ' + err.message);
+8    }
+9  }
+
+Функція для видалення користувача:
+10 async function deleteUser(userId, currentUserRole) {
+11   // Перевірка, чи поточний користувач є адміністратором
+12   if (currentUserRole !== 'admin') {
+13     throw new Error('Доступ заборонено. Необхідна роль admin');
+14   }
+15   // Перевірка, чи користувач, якого видаляють, не є адміністратором
+16   const checkQuery = 'SELECT Role FROM Users WHERE UserID = $1';
+17   const checkValues = [userId];
+18   try {
+19     const checkResult = await client.query(checkQuery, checkValues);
+20     if (checkResult.rows.length === 0) {
+21       throw new Error('Користувача з таким ID не знайдено');
+22     }
+23     const userToDelete = checkResult.rows[0];
+24     if (userToDelete.role === 'admin') {
+25       throw new Error('Неможливо видалити іншого адміністратора');
+26     }
+27     // Видалення користувача
+28     const deleteQuery = 'DELETE FROM Users WHERE UserID = $1 RETURNING UserID, Username, Role';
+29     const deleteValues = [userId];
+30     const result = await client.query(deleteQuery, deleteValues);
+31     return result.rows[0];
+32   } catch (err) {
+33     throw new Error('Помилка при видаленні користувача: ' + err.message);
+34   }
+35 }
+Функція для отримання всіх дверей:
+36 async function getAllDoors() {
+37   const query = 'SELECT DoorID, DoorName, Location, OpenCount, OpenTime FROM Doors';
+38   try {
+39     const result = await client.query(query);
+40     return result.rows;
+41   } catch (err) {
+42     throw new Error('Помилка при отриманні списку дверей: ' + err.message);
+43   }
+44 }
+
+Висновки: У ході виконання лабораторної роботи було розроблено серверну частину програмної системи для контролю доступу на підприємствах. Система успішно реалізує базову бізнес-логіку, забезпечуючи зручне керування дверима, користувачами та кодами доступу. Завдяки використанню сучасних технологій, таких як Node.js, Express.js та PostgreSQL, вдалося створити продуктивну, масштабовану та безпечну архітектуру.
+Основна увага була приділена забезпеченню безпеки системи. Реалізовано механізми автентифікації та авторизації на основі JWT токенів, а також middleware для перевірки прав доступу. Завдяки цьому забезпечується розподіл ролей і захист адміністративних функцій від несанкціонованого доступу.
+Отже, створена система є надійним і ефективним рішенням для автоматизації контролю доступу, що може бути впроваджено на підприємствах різного масштабу.
+
+Посилання на відео:
+ 
+
+
+ДОДАТОК А
+UML діаграма діяльності
+ 
+Рисунок 1 – UML діаграма діяльності
+ 
+
+
+ДОДАТОК Б
+UML діаграма взаємодії
+ 
+Рисунок 2 – UML діаграма взаємодії між клієнтом і сервером
